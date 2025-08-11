@@ -168,7 +168,7 @@
 <body>
     <div class="terminal">
         <div class="header">
-            <div class="title">🤖 EVA VOICE ASSISTANT </div>
+            <div class="title">EVA VOICE ASSISTANT </div>
             <div class="controls">
                 <select class="language-select" id="languageSelect">
                     <option value="en">English</option>
@@ -323,7 +323,7 @@
 
                     this.mediaRecorder.start();
                     this.isRecording = true;
-                    this.voiceBtn.textContent = '⏹️ Stop';
+                    this.voiceBtn.textContent = 'Stop';
                     this.voiceBtn.classList.add('recording');
                     this.addLog('🎤 Recording... Click Stop when finished', 'prompt');
 
@@ -336,7 +336,7 @@
                 if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
                     this.mediaRecorder.stop();
                     this.isRecording = false;
-                    this.voiceBtn.textContent = '🎤 Voice';
+                    this.voiceBtn.textContent = 'Voice';
                     this.voiceBtn.classList.remove('recording');
                     this.addLog('Processing audio...', 'prompt');
                 }
