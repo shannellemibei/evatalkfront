@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Eva Voice Assistant - Web Terminal</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Courier New', monospace;
+            background-color: #0c0c0c;
+            color: #00ff00;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .terminal {
+            width: 100%;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            padding: 20px;
+        }
+
+        .header {
+            border-bottom: 1px solid #00ff00;
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+        }
+
+        .title {
+            font-size: 1.5em;
+            color: #00ff00;
+            text-align: center;
+        }
+
+        .controls {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin: 10px 0;
+        }
+
+        .language-select {
+            background: #1a1a1a;
+            border: 1px solid #00ff00;
+            color: #00ff00;
+            padding: 5px;
+            border-radius: 3px;
+        }
+
+        .output {
+            flex: 1;
+            overflow-y: auto;
+            background-color: #111;
+            padding: 15px;
+            border: 1px solid #333;
+            margin-bottom: 20px;
+            border-radius: 5px;
+        }
+
+        .output::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .output::-webkit-scrollbar-track {
+            background: #222;
+        }
+
+        .output::-webkit-scrollbar-thumb {
+            background: #00ff00;
+            border-radius: 4px;
+        }
+
+        .log-entry {
+            margin-bottom: 10px;
+            line-height: 1.4;
+        }
+
+        .ai-response {
+            color: #00ccff;
+            margin-left: 10px;
+        }
+
+        .error {
+            color: #ff4444;
+        }
+
+        .input-area {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .text-input {
+            flex: 1;
+            background: #1a1a1a;
+            border: 1px solid #00ff00;
+            color: #00ff00;
+            padding: 10px;
+            font-family: 'Courier New', monospace;
+            border-radius: 3px;
+        }
+
+        .text-input:focus {
+            outline: none;
+            border-color: #00ccff;
+            box-shadow: 0 0 5px #00ccff;
+        }
+
+        .btn {
+            background: #1a1a1a;
+            border: 1px solid #00ff00;
+            color: #00ff00;
+            padding: 10px 15px;
+            cursor: pointer;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+            transition: all 0.3s;
+        }
+
+        .btn:hover {
+            background: #00ff00;
+            color: #000;
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .voice-btn.recording {
+            background: #ff4444;
+            border-color: #ff4444;
+            animation: pulse 1s infinite;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.7; }
+            100% { opacity: 1; }
+        }
+
+        .status {
+            text-align: center;
+            margin: 10px 0;
+            font-size: 0.9em;
+        }
+
+        .connected {
+            color: #00ff00;
+        }
+
+        .disconnected {
+            color: #ff4444;
+        }
+
+        .prompt {
+            color: #ffff00;
+        }
+    </style>
+</head>
+<body>
+    <div class="terminal">
+        <div class="header">
+            <div class="title">🤖 EVA VOICE ASSISTANT - WEB TERMINAL</div>
+            <div class="controls">
+                <select class="language-select" id="languageSelect">
+                    <option value="en">English</option>
+                    <option value="sw">Swahili</option>
+                </select>
+                <div class="status" id="connectionStatus">Connecting...</div>
+            </div>
+        </div>
+
+        <div class="output" id="output">
+            <div class="log-entry prompt">Eva Web Terminal v1.0 - Ready for commands</div>
+            <div class="log-entry">Type your message or use voice input</div>
+            <div class="log-entry">Language: <span id="currentLang">English</span></div>
+        </div>
+
+        <div class="input-area">
+            <input type="text" class="text-input" id="textInput" placeholder="Type your command here...">
+            <button class="btn" id="sendBtn">Send</button>
+            <button class="btn voice-btn" id="voiceBtn">🎤 Voice</button>
+            <button class="btn" id="clearBtn">Clear</button>
+        </div>
+    </div>
+
+    <script>
+        class EvaTerminal {
+            constructor() {
+                this.socket = null;
+                this.isRecording = false;
+                this.mediaRecorder = null;
+                this.audioChunks = [];
+                
+                this.initializeElements();
+                this.connectWebSocket();
+                this.setupEventListeners();
+            }
+
+            initializeElements() {
+                this.output = document.getElementById('output');
+                this.textInput = document.getElementById('textInput');
+                this.sendBtn = document.getElementById('sendBtn');
+                this.voiceBtn = document.getElementById('voiceBtn');
+                this.clearBtn = document.getElementById('clearBtn');
+                this.languageSelect = document.getElementById('languageSelect');
+                this.connectionStatus = document.getElementById('connectionStatus');
+                this.currentLang = document.getElementById('currentLang');
+            }
+
+            connectWebSocket() {
+                const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+                const wsUrl = `${protocol}//${location.host}/ws`;
+                
+                this.socket = new WebSocket(wsUrl);
+                
+                this.socket.onopen = () => {
+                    this.updateStatus('Connected', true);
+                    this.addLog('> Connected to Eva Assistant', 'prompt');
+                };
+                
+                this.socket.onclose = () => {
+                    this.updateStatus('Disconnected', false);
+                    this.addLog('> Connection lost. Refresh to reconnect.', 'error');
+                };
+                
+                this.socket.onmessage = (event) => {
+                    const data = JSON.parse(event.data);
+                    this.handleMessage(data);
+                };
+            }
+
+            setupEventListeners() {
+                this.sendBtn.addEventListener('click', () => this.sendText());
+                this.textInput.addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') this.sendText();
+                });
+                
+                this.voiceBtn.addEventListener('click', () => this.toggleVoiceRecording());
+                this.clearBtn.addEventListener('click', () => this.clearOutput());
+                
+                this.languageSelect.addEventListener('change', () => {
+                    const lang = this.languageSelect.value;
+                    this.currentLang.textContent = lang === 'en' ? 'English' : 'Swahili';
+                });
+            }
+
+            updateStatus(status, connected) {
+                this.connectionStatus.textContent = status;
+                this.connectionStatus.className = `status ${connected ? 'connected' : 'disconnected'}`;
+            }
+
+            addLog(message, className = '') {
+                const entry = document.createElement('div');
+                entry.className = `log-entry ${className}`;
+                entry.textContent = message;
+                this.output.appendChild(entry);
+                this.output.scrollTop = this.output.scrollHeight;
+            }
+
+            handleMessage(data) {
+                switch (data.type) {
+                    case 'log':
+                        this.addLog(data.message);
+                        break;
+                    case 'ai_response':
+                        this.addLog(`Eva: ${data.text}`, 'ai-response');
+                        break;
+                    case 'audio_response':
+                        this.playAudio(data.audio);
+                        break;
+                    case 'error':
+                        this.addLog(`Error: ${data.message}`, 'error');
+                        break;
+                }
+            }
+
+            sendText() {
+                const text = this.textInput.value.trim();
+                if (!text) return;
+
+                const message = {
+                    type: 'text_input',
+                    text: text,
+                    language: this.languageSelect.value
+                };
+
+                this.socket.send(JSON.stringify(message));
+                this.textInput.value = '';
+            }
+
+            async toggleVoiceRecording() {
+                if (!this.isRecording) {
+                    await this.startRecording();
+                } else {
+                    this.stopRecording();
+                }
+            }
+
+            async startRecording() {
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    this.mediaRecorder = new MediaRecorder(stream);
+                    this.audioChunks = [];
+
+                    this.mediaRecorder.ondataavailable = (event) => {
+                        this.audioChunks.push(event.data);
+                    };
+
+                    this.mediaRecorder.onstop = () => {
+                        const audioBlob = new Blob(this.audioChunks, { type: 'audio/wav' });
+                        this.sendAudio(audioBlob);
+                        stream.getTracks().forEach(track => track.stop());
+                    };
+
+                    this.mediaRecorder.start();
+                    this.isRecording = true;
+                    this.voiceBtn.textContent = '⏹️ Stop';
+                    this.voiceBtn.classList.add('recording');
+                    this.addLog('🎤 Recording... Click Stop when finished', 'prompt');
+
+                } catch (error) {
+                    this.addLog('Error: Could not access microphone', 'error');
+                }
+            }
+
+            stopRecording() {
+                if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
+                    this.mediaRecorder.stop();
+                    this.isRecording = false;
+                    this.voiceBtn.textContent = '🎤 Voice';
+                    this.voiceBtn.classList.remove('recording');
+                    this.addLog('Processing audio...', 'prompt');
+                }
+            }
+
+            sendAudio(audioBlob) {
+                const reader = new FileReader();
+                reader.onload = () => {
+                    const audioData = reader.result.split(',')[1]; // Remove data:audio/wav;base64,
+                    
+                    const message = {
+                        type: 'audio_input',
+                        audio: audioData,
+                        language: this.languageSelect.value === 'en' ? 'en-US' : 'sw-KE'
+                    };
+
+                    this.socket.send(JSON.stringify(message));
+                };
+                reader.readAsDataURL(audioBlob);
+            }
+
+            playAudio(audioBase64) {
+                try {
+                    const audio = new Audio(`data:audio/mp3;base64,${audioBase64}`);
+                    audio.play().catch(e => {
+                        console.log('Audio playback failed:', e);
+                        this.addLog('Audio received (autoplay blocked)', 'prompt');
+                    });
+                } catch (error) {
+                    console.error('Audio error:', error);
+                }
+            }
+
+            clearOutput() {
+                this.output.innerHTML = `
+                    <div class="log-entry prompt">Terminal cleared</div>
+                    <div class="log-entry">Ready for new commands</div>
+                `;
+            }
+        }
+
+        // Initialize the terminal when the page loads
+        window.addEventListener('DOMContentLoaded', () => {
+            new EvaTerminal();
+        });
+    </script>
+</body>
+</html>
